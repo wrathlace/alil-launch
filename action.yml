@@ -1,0 +1,37 @@
+name: Alil Launch
+description: A lil check before you launch. Finds secrets, unsafe settings, missing backups and deployment mistakes.
+branding:
+  icon: shield
+  color: green
+inputs:
+  path:
+    description: Folder to scan
+    default: .
+  fail-on:
+    description: Fail the job at this severity or above
+    default: high
+  online:
+    description: Look up known vulnerabilities. Sends package names and versions only
+    default: 'true'
+  args:
+    description: Extra alil-launch arguments
+    default: ''
+  version:
+    description: alil-launch version
+    default: latest
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        LR_PATH: ${{ inputs.path }}
+        LR_FAIL_ON: ${{ inputs.fail-on }}
+        LR_ARGS: ${{ inputs.args }}
+        LR_VERSION: ${{ inputs.version }}
+        LR_ONLINE: ${{ inputs.online }}
+      run: |
+        [ "$LR_ONLINE" != true ] || LR_ARGS="--online $LR_ARGS"
+        npx -y "alil-launch@$LR_VERSION" "$LR_PATH" --fail-on "$LR_FAIL_ON" --format markdown --output alil-launch.md $LR_ARGS || status=$?
+        cat alil-launch.md >> "$GITHUB_STEP_SUMMARY"
+        rm -f alil-launch.md
+        exit ${status:-0}

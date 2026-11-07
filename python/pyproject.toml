@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alil-launch"
+version = "0.1.0"
+description = "A lil check before you launch."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = ["security", "secrets", "deployment", "production-readiness", "cli"]
+
+[project.urls]
+Homepage = "https://github.com/wrathlace/alil-launch"
+Issues = "https://github.com/wrathlace/alil-launch/issues"
+
+[project.scripts]
+alil-launch = "alil_launch.__main__:main"
+
+[tool.setuptools]
+packages = ["alil_launch"]

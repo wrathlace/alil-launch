@@ -1,0 +1,6 @@
+- id: alil-launch
+  name: Alil Launch
+  description: Blocks commits that contain secrets or unsafe settings.
+  entry: alil-launch --staged --only secrets,config --fail-on high
+  language: node
+  pass_filenames: false
