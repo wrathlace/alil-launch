@@ -1,14 +1,27 @@
 {
   "name": "alil-launch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A lil check before you launch. Finds exposed secrets, unsafe settings, missing backups, known CVEs and deployment mistakes, and keeps watching for new ones.",
   "type": "module",
-  "bin": { "alil-launch": "dist/cli.js" },
+  "bin": {
+    "alil-launch": "dist/cli.js"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist", "README.md", "LICENSE"],
-  "engines": { "node": ">=20" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -16,11 +29,36 @@
     "selfcheck": "tsc && node dist/cli.js .",
     "prepublishOnly": "npm test"
   },
-  "keywords": ["security", "secrets", "secret-scanner", "devsecops", "sast", "launch", "deployment", "production-readiness", "backups", "cve", "vulnerability-scanner", "dependency-monitoring", "wordpress", "drupal", "cli", "mcp", "ai", "vibe-coding", "sarif"],
+  "keywords": [
+    "security",
+    "secrets",
+    "secret-scanner",
+    "devsecops",
+    "sast",
+    "launch",
+    "deployment",
+    "production-readiness",
+    "backups",
+    "cve",
+    "vulnerability-scanner",
+    "dependency-monitoring",
+    "wordpress",
+    "drupal",
+    "cli",
+    "mcp",
+    "ai",
+    "vibe-coding",
+    "sarif"
+  ],
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/wrathlace/alil-launch.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wrathlace/alil-launch.git"
+  },
   "homepage": "https://github.com/wrathlace/alil-launch#readme",
-  "bugs": { "url": "https://github.com/wrathlace/alil-launch/issues" },
+  "bugs": {
+    "url": "https://github.com/wrathlace/alil-launch/issues"
+  },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.5.0"
