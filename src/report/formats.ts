@@ -51,7 +51,7 @@ export function renderMarkdown(result: ScanResult): string {
   const lines = [
     `## Alil Launch: ${result.verdict} (${result.score}/100, grade ${result.grade})`,
     '',
-    `${result.counts.critical} critical, ${result.counts.high} high, ${result.counts.medium} medium, ${result.counts.low} low. Scanned ${result.filesScanned} files.`,
+    `${result.counts.critical} critical, ${result.counts.high} high, ${result.counts.medium} medium, ${result.counts.low} low. ${result.url && !result.filesScanned ? `Checked ${result.url}.` : `Scanned ${result.filesScanned} files.`}`,
     '',
     '| Category | Score | Findings |',
     '|---|---:|---:|',

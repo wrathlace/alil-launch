@@ -91,6 +91,8 @@ npx alil-launch --history                 # Secrets anywhere in git history
 npx alil-launch --run                     # Run your own build, lint and test commands
 ```
 
+On its own, `--url` checks only the website and reads no files, so it works from any folder. To check a project and its site together, add the path: `npx alil-launch . --url https://myapp.com`.
+
 Only use `--url` on sites you own or have permission to test. It requests a few common sensitive paths, such as `/.env`.
 
 `--online` sends package and plugin names and versions to [OSV](https://osv.dev), the [NVD](https://nvd.nist.gov), npm, PyPI and wordpress.org, and CVE ids to [CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and [FIRST](https://www.first.org/epss/). It never sends your code. Private package names are included, so don't use it if a name itself is confidential.

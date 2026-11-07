@@ -32,7 +32,9 @@ export function renderConsole(result: ScanResult, { verbose = false }: { verbose
   const verdictStyle = result.verdict === 'READY' ? green : result.verdict === 'NOT READY' ? red : yellow;
   out.push(`  ${bold('Alil Launch')} ${dim(`v${result.tool.version}`)}`);
   const stack = [...result.stack.languages, ...result.stack.frameworks, ...result.stack.databases];
-  out.push(`  ${dim(`${result.filesScanned} files scanned in ${(result.durationMs / 1000).toFixed(1)}s${stack.length ? ` · ${stack.join(', ')}` : ''}`)}`);
+  const seconds = (result.durationMs / 1000).toFixed(1);
+  const siteOnly = Boolean(result.url) && !result.filesScanned;
+  out.push(`  ${dim(siteOnly ? `${result.url} checked in ${seconds}s` : `${result.filesScanned} files scanned in ${seconds}s${stack.length ? ` · ${stack.join(', ')}` : ''}`)}`);
   out.push('');
   out.push(`  ${bold(verdictStyle(result.verdict))}   ${bold(`${result.score}/100`)}  ${dim(`grade ${result.grade}`)}`);
   out.push('');
@@ -60,9 +62,9 @@ export function renderConsole(result: ScanResult, { verbose = false }: { verbose
 
   const { critical, high, medium, low } = result.counts;
   out.push(`  ${red(`${critical} critical`)}  ${red(`${high} high`)}  ${yellow(`${medium} medium`)}  ${blue(`${low} low`)}${result.suppressed ? dim(`  ${result.suppressed} suppressed`) : ''}`);
-  if (result.findings.length) out.push(`  ${dim('Run `alil-launch fix` for safe automatic fixes.')}`);
-  if (result.packagesChecked === null) out.push(`  ${dim('Known vulnerabilities were not checked. Add --online to look up CVEs.')}`);
-  else out.push(`  ${dim(`${result.packagesChecked} packages checked for known vulnerabilities.`)}`);
+  if (result.findings.length && !siteOnly) out.push(`  ${dim('Run `alil-launch fix` for safe automatic fixes.')}`);
+  if (result.packagesChecked !== null) out.push(`  ${dim(`${result.packagesChecked} packages checked for known vulnerabilities.`)}`);
+  else if (!siteOnly) out.push(`  ${dim('Known vulnerabilities were not checked. Add --online to look up CVEs.')}`);
   out.push('');
   return out.join('\n');
 }

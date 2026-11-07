@@ -32,7 +32,7 @@ main{max-width:860px;margin:0 auto;padding:32px 16px}h1{font-size:20px;margin:0 
 .tag{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}code{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
 </style></head><body><main>
 <h1>Alil Launch report</h1>
-<p class="muted">${escape(result.scannedAt)} · ${result.filesScanned} files · v${escape(result.tool.version)}</p>
+<p class="muted">${escape(result.scannedAt)} · ${result.url && !result.filesScanned ? escape(result.url) : `${result.filesScanned} files`} · v${escape(result.tool.version)}</p>
 <section class="hero"><p class="verdict ${tone}">${escape(result.verdict)}</p><p><strong>${result.score}/100</strong> (grade ${escape(result.grade)})</p>${bars}</section>
 ${result.incomplete.map((gap) => `<p class="finding medium"><strong>Not checked:</strong> ${escape(gap)}</p>`).join('')}
 <section>${rows || '<p>No issues found.</p>'}</section>

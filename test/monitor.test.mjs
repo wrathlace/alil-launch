@@ -536,6 +536,33 @@ test('monitor renders pretty, markdown and json, and rejects other formats', () 
   assert.equal(cli('--every', '0.1').status, 2);
 });
 
+test('bad command line input fails with a clear message', () => {
+  const root = project({ 'a.txt': 'hello\n' });
+  const hook = join(root, 'stub.cjs');
+  writeFileSync(hook, 'globalThis.fetch = async () => { throw new Error("network used"); };\n');
+  const cli = (...args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', env: { ...process.env, NODE_OPTIONS: `--require ${hook}` } });
+
+  const typo = cli(root, '--only', 'secrts');
+  assert.equal(typo.status, 2);
+  assert.match(typo.stderr, /Unknown --only category: secrts/);
+  assert.equal(cli(root, '--only', 'secrets,config').status, 0);
+  assert.equal(cli('monitor', root, '--only', 'secrts').status, 2);
+
+  const explain = cli('explain');
+  assert.equal(explain.status, 2);
+  assert.match(explain.stderr, /Usage: alil-launch explain/);
+  assert.doesNotMatch(explain.stderr, /undefined/);
+
+  assert.equal(cli('monitor', root, '--every', '1000').status, 2);
+});
+
+test('a bad monitor format stops before state is saved, so no alert is lost', () => {
+  const root = project({ 'a.txt': 'hello\n' });
+  const run = spawnSync(process.execPath, [CLI, 'monitor', root, '--format', 'sarif'], { encoding: 'utf8' });
+  assert.equal(run.status, 2);
+  assert.throws(() => readFileSync(join(root, '.alil-launch-monitor.json')));
+});
+
 test('init adds the monitor workflow with expressions left for GitHub to fill in', () => {
   const root = project({});
   execFileSync(process.execPath, [CLI, 'init', root]);

@@ -16,15 +16,15 @@ import { sha } from './util.js';
 const require = createRequire(import.meta.url);
 export const VERSION: string = require('../../package.json').version;
 
-const CATEGORY_ORDER: Category[] = ['secrets', 'config', 'dependencies', 'backups', 'deployment', 'launch', 'checks', 'live'];
+export const CATEGORY_ORDER: Category[] = ['secrets', 'config', 'dependencies', 'backups', 'deployment', 'launch', 'checks', 'live'];
 const SUPPRESS = /alil-launch-ignore\b/;
 
 export function buildContext(rootInput: string, options: ScanOptions): ScanContext {
   const root = resolve(rootInput);
   if (!existsSync(root)) throw new Error(`Path not found: ${root}`);
   const config = options.config ?? loadConfig(root);
-  const git = gitInfo(root);
-  const listed = listFiles(root, git, options.staged);
+  const git = options.skipFiles ? { isRepo: false, tracked: new Set<string>() } : gitInfo(root);
+  const listed = options.skipFiles ? { files: [], allPaths: [] } : listFiles(root, git, options.staged);
   const rules = parseIgnore((config.ignore ?? []).join('\n'));
   const files = listed.files.filter((f) => !isIgnored(f, false, rules));
   const cache = new Map<string, string | null>();
@@ -100,6 +100,7 @@ export async function scan(rootInput = '.', options: ScanOptions = {}): Promise<
   };
 
   for (const checker of checkers) {
+    if (options.only && !checker.rules.some((rule) => options.only!.includes(rule.category))) continue;
     try {
       await checker.run(ctx, report);
     } catch (error) {

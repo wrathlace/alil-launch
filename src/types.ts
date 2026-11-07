@@ -120,6 +120,8 @@ export interface ScanOptions {
   only?: Category[];
   baseline?: string;
   config?: Config;
+  /** Reads no project files, for a check of the live site alone. */
+  skipFiles?: boolean;
 }
 
 export interface CategoryScore {
