@@ -292,8 +292,18 @@ A READY verdict means Alil Launch found no serious problems. It doesn't prove yo
 
 - A default scan makes no network requests. Only `--url`, `--online` and `monitor` do
 - There's no telemetry and no account
-- Secrets are always redacted in output, and baselines store only hashes
+- Secret values are masked in every report, and baselines store only hashes. See below
 - It has **zero runtime dependencies**, so installing it pulls in nothing else
+
+### What reports contain
+
+A finding names the rule, the file and the line. It never prints a usable credential, so a report is safe to paste into a CI log, a pull request or a support ticket.
+
+- **Secret findings** show the first 4 characters followed by a mask, such as `sk_l********`, so you can tell which key it was. Values of 8 characters or fewer are fully masked.
+- **Everything else a report quotes is masked too.** This covers lines matched by other rules and the output of failed `--run` commands. Masking catches known key formats, values assigned to names like `password` or `token`, passwords in URLs, `Authorization` headers, private keys and long random-looking strings.
+- **Baselines and monitor state** store hashes and advisory ids, never values. Webhook alerts are built from the masked findings.
+
+Masking can't recognise every possible format. If your build prints secrets in an unusual format, keep `--run` out of public CI logs, and fix the build so it stops printing them.
 
 ## Contributing
 

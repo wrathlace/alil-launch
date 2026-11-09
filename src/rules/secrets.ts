@@ -76,6 +76,34 @@ const PROVIDERS: Provider[] = [
   },
 ];
 
+/** Names whose assigned value is a credential, wherever the line comes from. */
+const CREDENTIAL_ASSIGNMENT = /\b([\w.-]*(?:pass(?:word|wd)?|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|auth|credentials?)[\w.-]*)(["']?\s*[:=]\s*["']?)([^\s"'`,;&]{6,})/gi;
+const URL_PASSWORD = /(\b[a-z][\w+.-]*:\/\/[^\s:@/"'`]+:)([^\s@/"'`]{3,})@/gi;
+const AUTH_HEADER = /\b(Bearer|Basic|Token)\s+([A-Za-z0-9._~+/=-]{12,})/g;
+/** Long mixed-case and digit runs, such as keys from providers we don't know. Pure hex, like a commit id, is left alone. */
+const TOKEN_LIKE = /(?<![\w*])(?=[A-Za-z0-9_+/=-]*[a-z])(?=[A-Za-z0-9_+/=-]*[A-Z])(?=[A-Za-z0-9_+/=-]*\d)[A-Za-z0-9_+/=-]{32,}(?![\w*])/g;
+
+/**
+ * Masks anything that looks like a credential in text a report will show, such as a matched line or
+ * the output of a project command. It is broader than detection on purpose: hiding too much is safe.
+ */
+export function maskSecrets(text: string): string {
+  let out = text;
+  for (const provider of PROVIDERS) {
+    if (provider.id === 'private-key') continue;
+    out = out.replace(provider.re, (match: string, ...groups: unknown[]) => {
+      const value = typeof groups[(provider.group ?? 1) - 1] === 'string' ? (groups[(provider.group ?? 1) - 1] as string) : match;
+      return match.replace(value, redact(value));
+    });
+  }
+  return out
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY[A-Z ]*-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY[A-Z ]*-----|$)/g, '[private key removed]')
+    .replace(URL_PASSWORD, (_m, before: string, value: string) => `${before}${redact(value)}@`)
+    .replace(AUTH_HEADER, (_m, scheme: string, value: string) => `${scheme} ${redact(value)}`)
+    .replace(CREDENTIAL_ASSIGNMENT, (match, name: string, glue: string, value: string) => (value.includes('*') ? match : `${name}${glue}${redact(value)}`))
+    .replace(TOKEN_LIKE, (value) => redact(value));
+}
+
 const GENERIC_RULE: RuleMeta = {
   id: 'secret/generic',
   title: 'Hardcoded credential',

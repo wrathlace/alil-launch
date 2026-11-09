@@ -49,6 +49,66 @@ test('finds provider secrets and never reveals them in any output format', async
   }
 });
 
+test('secrets in command output and matched lines are masked in every report', async () => {
+  const { maskSecrets } = await import('../dist/rules/secrets.js');
+  const values = {
+    stripe: secrets.stripe,
+    github: secrets.github,
+    password: ['Hunter2', 'Secret99'].join(''),
+    url: ['s3cretPw', '42'].join(''),
+    bearer: ['eyJhbGciOiJIUzI1NiJ9', 'Zm9vYmFyYmF6'].join(''),
+    unknown: ['Qm9vT2ZTZWNyZXRz', 'X9aB7cD2eF4gH6jK'].join(''),
+  };
+  const output = [
+    `> build`,
+    `STRIPE_KEY=${values.stripe}`,
+    `token: ${values.github}`,
+    `db_password = "${values.password}"`,
+    `connecting to https://admin:${values.url}@api.example.dev/v1`,
+    `Authorization: Bearer ${values.bearer}`,
+    `custom key ${values.unknown}`,
+    '-----BEGIN RSA PRIVATE KEY-----',
+    'MIIEowIBAAKCAQEA',
+    '-----END RSA PRIVATE KEY-----',
+  ].join('\n');
+  const masked = maskSecrets(output);
+  for (const [name, value] of Object.entries(values)) assert.ok(!masked.includes(value), `${name} leaked: ${masked}`);
+  assert.ok(!masked.includes('MIIEowIBAAKCAQEA'), 'private key body leaked');
+  assert.match(masked, /STRIPE_KEY=sk_l\*{8}/, 'the prefix stays so a person can tell what it was');
+
+  // Through a real scan: a failing build that prints secrets, and a non-secret rule that quotes its line.
+  const script = `node -e "console.log(process.env.LEAK_A); console.log('password=' + process.env.LEAK_B); process.exit(1)"`;
+  const root = project({
+    'package.json': JSON.stringify({ scripts: { build: script } }),
+    'client.js': `fetch("http://localhost:3000/api?token=${values.github}");\n`,
+  });
+  const before = { ...process.env };
+  process.env.LEAK_A = values.stripe;
+  process.env.LEAK_B = values.password;
+  try {
+    const result = await scan(root, { run: true });
+    assert.ok(result.findings.some((f) => f.ruleId === 'run/command-failed'), 'the failing build is still reported');
+    assert.ok(result.findings.some((f) => f.ruleId === 'deploy/hardcoded-localhost'), 'the localhost rule still fires');
+    for (const report of [renderJson(result), renderSarif(result), renderMarkdown(result), renderPrompt(result), renderHtml(result)]) {
+      for (const value of [values.stripe, values.password, values.github]) assert.ok(!report.includes(value), 'secret leaked into a report');
+    }
+  } finally {
+    process.env = before;
+  }
+});
+
+test('masking leaves ordinary report text alone', async () => {
+  const { maskSecrets } = await import('../dist/rules/secrets.js');
+  const plain = [
+    'org.apache.logging.log4j:log4j-core@2.14.0: CVE-2021-44228, CVE-2021-45046 (Remote code injection in Log4j). Upgrade to 2.17.1 or later.',
+    'Cookie `session_token` is missing Secure, HttpOnly.',
+    'commit 15dd70e6a2b4c8d9e0f1a2b3c4d5e6f7a8b9c0d1 changed package.json',
+    '`npm run test` exited with code 3.',
+    'There is no lockfile, so the installed versions of 1 of 2 direct dependencies are unknown and were not checked: axios.',
+  ];
+  for (const line of plain) assert.equal(maskSecrets(line), line);
+});
+
 test('placeholders and environment lookups are not reported as secrets', async () => {
   const root = project({
     'app.js': 'const password = process.env.DB_PASSWORD;\nconst apiKey = "your_api_key_here";\nconst token = "<token>";\nconst secret = "changeme";\nconst tokenKey = "auth.token.name";\n',

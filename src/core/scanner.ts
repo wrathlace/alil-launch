@@ -5,6 +5,7 @@ import type { Category, Checker, Finding, FindingInput, RuleMeta, ScanContext, S
 import { SEVERITIES, severityRank } from '../types.js';
 import { CHECKERS } from '../rules/index.js';
 import { customChecker } from '../rules/custom.js';
+import { maskSecrets } from '../rules/secrets.js';
 import { readBaseline } from './baseline.js';
 import { loadConfig } from './config.js';
 import { gitInfo, listFiles, readText } from './files.js';
@@ -88,11 +89,12 @@ export async function scan(rootInput = '.', options: ScanOptions = {}): Promise<
       title: meta.title,
       category: meta.category,
       severity: (override as Severity | undefined) ?? input.severity ?? meta.severity,
-      message: input.message ?? meta.description,
+      // Every rule's text passes through here, so a report is safe to paste into a CI log or a ticket.
+      message: maskSecrets(input.message ?? meta.description),
       fix: meta.fix,
       file: input.file,
       line: input.line,
-      evidence: input.evidence,
+      evidence: input.evidence === undefined ? undefined : maskSecrets(input.evidence),
       advisories: input.advisories,
       exploited: input.exploited,
       fingerprint: sha(`${ruleId}|${input.file ?? ''}|${input.key ?? input.message ?? ''}`),

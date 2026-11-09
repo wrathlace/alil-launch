@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Reports now mask credentials everywhere they quote text, including failed `--run` output and lines matched by non-secret rules. Before this, a secret printed by a project's build could appear in full
+- A "What reports contain" section in the README
+
 ## 0.1.0
 
 First release.
