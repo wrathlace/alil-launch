@@ -80,6 +80,8 @@ export interface ScanContext {
   gaps: string[];
   /** Packages looked up for known vulnerabilities, or null when that check did not run. */
   packagesChecked: number | null;
+  /** Pages of the live site that were fetched, or null when no site was checked. */
+  pagesChecked: number | null;
   read(path: string): string | null;
   exists(path: string): boolean;
   /** Text of every scanned file whose path matches. */
@@ -122,6 +124,8 @@ export interface ScanOptions {
   config?: Config;
   /** Reads no project files, for a check of the live site alone. */
   skipFiles?: boolean;
+  /** Internal pages the live check may fetch after the home page. */
+  maxPages?: number;
 }
 
 export interface CategoryScore {
@@ -150,6 +154,7 @@ export interface ScanResult {
   /** Requested checks that could not finish, so a clean result here proves nothing. */
   incomplete: string[];
   packagesChecked: number | null;
+  pagesChecked: number | null;
   rules: RuleMeta[];
 }
 

@@ -186,7 +186,7 @@ function looksLikeSecret(name: string, value: string): boolean {
   return entropy(value) >= 3 && /[0-9]/.test(value) && /[A-Za-z]/.test(value);
 }
 
-function scanText(path: string, text: string, report: Reporter): void {
+export function scanText(path: string, text: string, report: Reporter): void {
   const downgrade = isTestPath(path) || ENV_TEMPLATE.test(path) || CI_FILE.test(path);
   const seen = new Set<string>();
   const emit = (ruleId: string, value: string, line: number, base: Severity, message: string): void => {

@@ -50,7 +50,7 @@ const MAX_NVD_QUERIES = 90;
 const header = (text: string, name: string): string | undefined =>
   new RegExp(`^[\\s*#]*${name}:[ \\t]*(.+?)[ \\t]*$`, 'mi').exec(text.slice(0, 8192))?.[1];
 
-function product(vendor: string, name: string, version: string): NvdQuery {
+export function product(vendor: string, name: string, version: string): NvdQuery {
   return {
     cpe: `cpe:2.3:a:${vendor}:${name}:${version}`,
     version,
@@ -73,7 +73,7 @@ function wordpressAddon(slug: string, version: string): NvdQuery[] {
   }));
 }
 
-function addon(kind: string, slug: string, version: string | undefined, file: string, found: Platforms): void {
+export function addon(kind: string, slug: string, version: string | undefined, file: string, found: Platforms): void {
   if (!SAFE_SLUG.test(slug)) return;
   if (!version || !SAFE_VERSION.test(version)) {
     found.unversioned.push(file);

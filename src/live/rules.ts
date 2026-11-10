@@ -1,0 +1,49 @@
+import type { RuleMeta } from '../types.js';
+
+const rule = (id: string, title: string, severity: RuleMeta['severity'], description: string, fix: string): RuleMeta => ({
+  id, title, severity, description, fix, category: 'live',
+});
+
+export const RULES = {
+  unreachable: rule('live/unreachable', 'Site could not be reached', 'critical', 'The URL did not return a successful response.', 'Check DNS, TLS and that the app is running.'),
+  noHttps: rule('live/no-https', 'Site is not served over HTTPS', 'critical', 'Traffic can be read and changed in transit.', 'Serve the site over HTTPS.'),
+  noRedirect: rule('live/http-not-redirected', 'HTTP does not redirect to HTTPS', 'high', 'Visitors can stay on an unencrypted connection.', 'Redirect all HTTP traffic to HTTPS.'),
+  cert: rule('live/certificate-expiring', 'TLS certificate expires soon', 'high', 'When the certificate expires, browsers block the site.', 'Renew the certificate and automate renewal.'),
+  oldTls: rule('live/old-tls-version', 'Outdated TLS version accepted', 'medium', 'TLS 1.0 and 1.1 have known weaknesses and are no longer allowed by PCI DSS or modern browsers.', 'Allow only TLS 1.2 and 1.3.'),
+  exposed: rule('live/sensitive-file-exposed', 'Sensitive file publicly accessible', 'critical', 'A file that should be private can be downloaded by anyone.', 'Block the path at your web server and rotate anything it contained.'),
+  header: rule('live/missing-security-header', 'Security header missing', 'medium', 'The response lacks a recommended browser protection.', 'Set the header in your app, web server or CDN.'),
+  weakCsp: rule('live/weak-csp', 'Content Security Policy is weak', 'medium', 'The policy allows what it is meant to stop, so injected scripts can still run.', 'Remove `unsafe-inline`, `unsafe-eval` and wildcard sources from script-src. Use nonces or hashes instead.'),
+  weakHsts: rule('live/weak-hsts', 'HSTS max-age is short', 'low', 'A short max-age lets browsers fall back to HTTP soon after a visit.', 'Set `max-age` to at least 15552000 (180 days), ideally 31536000.'),
+  cors: rule('live/cors-misconfigured', 'CORS allows any website', 'high', 'The server echoes back any Origin, so other websites can read its responses from a visitor\'s browser.', 'Only allow the origins that need access. Never reflect the Origin header together with credentials.'),
+  server: rule('live/version-disclosed', 'Server version disclosed', 'low', 'Exact versions help attackers choose an exploit.', 'Remove version details from response headers.'),
+  cookie: rule('live/insecure-cookie', 'Cookie missing security flags', 'medium', 'Cookies without these flags are easier to steal.', 'Set Secure, HttpOnly and SameSite.'),
+  soft404: rule('live/soft-404', 'Missing pages return 200', 'low', 'Search engines index error pages and monitors miss broken links.', 'Return status 404 for unknown URLs.'),
+  robots: rule('live/robots-blocks-all', 'robots.txt blocks all crawlers', 'high', 'Often left over from staging, this removes the site from search results.', 'Allow crawling on your production site.'),
+  meta: rule('live/missing-page-metadata', 'Missing page metadata', 'low', 'Search and link previews will look poor.', 'Add a title, description and Open Graph tags.'),
+  slow: rule('live/slow-response', 'Slow first response', 'medium', 'The home page took over 2 seconds to respond.', 'Add caching or look into slow server work.'),
+  mixed: rule('live/mixed-content', 'Page loads content over HTTP', 'high', 'An HTTPS page that loads scripts, styles or frames over HTTP can be changed in transit, and browsers block or warn about it.', 'Load every resource over HTTPS.'),
+  form: rule('live/insecure-form', 'Form submits over HTTP', 'high', 'What people type into this form is sent unencrypted.', 'Point the form action at an HTTPS URL.'),
+  unpinned: rule('live/unpinned-script', 'Script loads an unpinned version from a CDN', 'high', 'The script can change at any time without you knowing, so whoever controls the package controls your page.', 'Pin an exact version and add an integrity hash, or host the file yourself.'),
+  sri: rule('live/script-without-integrity', 'CDN script has no integrity hash', 'medium', 'If the CDN is compromised, the script it serves runs on your site unchecked.', 'Add integrity and crossorigin attributes (Subresource Integrity), or host the file yourself.'),
+  library: rule('live/vulnerable-js-library', 'Front-end library has known vulnerabilities', 'medium', 'A JavaScript library the site serves has public security fixes that this version lacks.', 'Upgrade the library.'),
+  secret: rule('live/secret-in-javascript', 'Credential shipped to the browser', 'critical', 'Anything in a page or script the site serves can be read by every visitor.', 'Revoke the credential now, move it to the server side, and call the provider from your backend.'),
+  sourceMap: rule('live/source-map-exposed', 'Source maps are public', 'medium', 'Source maps rebuild your original source code, comments and file layout from the minified bundle.', 'Stop deploying .map files, or block them at the web server. Upload them to your error tracker privately instead.'),
+  internal: rule('live/internal-address-leaked', 'Internal address exposed', 'low', 'Private IPs, localhost URLs and staging hosts in public code map out your infrastructure.', 'Remove internal addresses from code and pages that ship to browsers.'),
+  errors: rule('live/error-details-exposed', 'Error details shown to visitors', 'medium', 'Debug pages and stack traces reveal file paths, versions, queries and sometimes secrets.', 'Turn off debug mode in production and show a generic error page.'),
+  apiDocs: rule('live/api-docs-exposed', 'API documentation is public', 'low', 'A full list of endpoints and parameters makes the API easy to probe.', 'Put API docs behind authentication on production, unless the API is meant to be public.'),
+  graphql: rule('live/graphql-introspection', 'GraphQL introspection is enabled', 'medium', 'Anyone can download the full schema, including fields the UI never uses.', 'Disable introspection in production.'),
+  admin: rule('live/admin-panel-exposed', 'Database admin tool is public', 'high', 'phpMyAdmin and Adminer are frequent brute-force and exploit targets.', 'Remove the tool from production or restrict it by IP or VPN.'),
+  crossdomain: rule('live/permissive-crossdomain', 'crossdomain.xml allows every domain', 'medium', 'Flash and Silverlight clients on any website can read this site\'s responses with a visitor\'s cookies.', 'Remove crossdomain.xml, or list only trusted domains.'),
+  listing: rule('live/directory-listing', 'Directory listing is enabled', 'medium', 'Anyone can browse every file in this folder, including ones never linked from the site.', 'Turn off directory indexes in your web server (for example `autoindex off` or `Options -Indexes`).'),
+  broken: rule('live/broken-link', 'Internal link is broken', 'low', 'A page linked from the site returns an error.', 'Fix or remove the link.'),
+  users: rule('live/user-enumeration', 'Account names are public', 'medium', 'Account names give password-guessing attacks half of what they need.', 'Restrict the WordPress users endpoint and author archives to logged-in users.'),
+  xmlrpc: rule('live/xmlrpc-enabled', 'WordPress XML-RPC is enabled', 'medium', 'xmlrpc.php allows many password guesses per request and is often used for brute force and pingback abuse.', 'Disable XML-RPC unless an app needs it, or block /xmlrpc.php at the web server.'),
+  component: rule('live/vulnerable-component', 'Site software has known vulnerabilities', 'high', 'Server software, a platform, plugin or package detected on the site has published vulnerabilities for this version, or is no longer maintained.', 'Update the component, or replace it if it is no longer maintained.'),
+  jwt: rule('live/weak-jwt', 'Weak JSON Web Token exposed to the browser', 'high', 'A token the site hands to visitors is unsigned or carries a privileged claim, so it can be forged or replayed to act as a privileged user.', 'Sign tokens with a strong algorithm (never `none`), keep privileged claims on the server, and give browser tokens a short lifetime.'),
+  loginPage: rule('live/login-page-exposed', 'Admin or login page is publicly reachable', 'info', 'A sign-in page open to the whole internet invites password guessing and credential stuffing.', 'Put admin logins behind SSO, an IP allowlist or a VPN, and add rate limiting and multi-factor authentication.'),
+  securityTxt: rule('live/no-security-txt', 'No security.txt', 'info', 'Researchers who find a problem have no listed way to tell you.', 'Publish /.well-known/security.txt with a Contact line (see securitytxt.org).'),
+  tech: rule('live/technology-detected', 'Technology detected', 'info', 'Part of the stack the site reveals to visitors.', 'No action needed. Hide versions where you can.'),
+  endpoints: rule('live/api-endpoints-found', 'API endpoints referenced in public code', 'info', 'These paths are visible to anyone who reads the site\'s JavaScript, so make sure each one checks authentication and input.', 'Review each endpoint for authentication, authorization and rate limits.'),
+};
+
+export const LIVE_RULES = Object.values(RULES);

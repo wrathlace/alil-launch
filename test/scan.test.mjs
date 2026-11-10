@@ -373,6 +373,169 @@ test('live checks use content proof, so a catch-all app is not flagged', async (
   }
 });
 
+test('live checks crawl internal pages and read what they load', async () => {
+  const requested = [];
+  const html = (body) => `<html><head><title>x</title><meta name="description" content="x"><meta property="og:title" content="x"></head><body>${body}</body></html>`;
+  const pages = {
+    '/': html(`
+      <a href="/about">About</a> <a href="/gone">Old</a> <a href="/private/report">Private</a> <a href="/logout">Out</a> <a href="/busy">Busy</a>
+      <a href="https://elsewhere.example/">External</a> <a href="mailto:a@b.dev">Mail</a>
+      <script src="https://unpkg.com/some-widget@latest/widget.js"></script>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" integrity="sha384-x" crossorigin="anonymous"></script>
+      <script src="/static/js/app.js"></script>
+      <script src="/wp-content/plugins/contact-form/js/form.js?ver=1.2.3"></script>`),
+    '/about': html('<a href="/about/team">Team</a><script src="https://unpkg.com/@scope/icons"></script>'),
+    '/about/team': html('Team'),
+    '/static/js/': '<html><head><title>Index of /static/js/</title></head><body><a href="app.js">app.js</a></body></html>',
+  };
+  const server = createServer((req, res) => {
+    const path = req.url.split('?')[0];
+    requested.push(path);
+    if (path === '/robots.txt') { res.setHeader('content-type', 'text/plain'); res.end('User-agent: *\nDisallow: /private\n'); return; }
+    if (path === '/busy') { res.statusCode = 503; res.setHeader('retry-after', '1'); res.end(); return; }
+    if (path === '/wp-json/wp/v2/users') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify([{ slug: 'admin' }, { slug: 'editor' }])); return; }
+    if (path === '/xmlrpc.php') { res.setHeader('content-type', 'text/plain'); res.end('XML-RPC server accepts POST requests only.'); return; }
+    if (!pages[path]) { res.statusCode = 404; res.end('nope'); return; }
+    res.setHeader('content-type', 'text/html');
+    res.end(pages[path]);
+  });
+  await new Promise((r) => server.listen(0, r));
+  try {
+    const result = await scan(project({ 'a.js': '' }), { url: `http://localhost:${server.address().port}`, only: ['live'] });
+    const found = (id) => result.findings.filter((f) => f.ruleId === id);
+
+    assert.equal(result.pagesChecked, 5, 'home, /about, /gone, /busy and /about/team');
+    assert.ok(requested.includes('/about/team'), 'follows links found on internal pages');
+    assert.ok(!requested.includes('/private/report'), 'respects robots.txt');
+    assert.ok(!requested.includes('/logout'), 'never follows logout links');
+
+    assert.deepEqual(found('live/broken-link').map((f) => f.message), ['/gone returns 404. Linked from /.']);
+    assert.equal(found('live/unpinned-script').length, 2);
+    assert.ok(found('live/unpinned-script').some((f) => f.message.includes('/about') && f.message.includes('@scope/icons')));
+    assert.match(found('live/vulnerable-js-library')[0]?.message ?? '', /jquery@1\.12\.4/);
+    const sri = found('live/script-without-integrity');
+    assert.equal(sri.length, 1, 'one finding per CDN host');
+    assert.match(sri[0].message, /^1 script\(s\) from cdnjs\.cloudflare\.com/, 'the script with an integrity hash is not counted');
+    assert.deepEqual(found('live/directory-listing').map((f) => f.message), ['/static/js/ lists its files.']);
+    assert.match(found('live/user-enumeration')[0]?.message ?? '', /2 account name\(s\): `admin`, `editor`/);
+    assert.equal(found('live/xmlrpc-enabled').length, 1);
+  } finally {
+    server.close();
+  }
+});
+
+test('passive checks flag weak tokens and reachable login pages, without sending credentials', async () => {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  // A deliberately unsigned token and a privileged one, as a site might embed in page bootstrap state.
+  const noneToken = `${b64({ alg: 'none', typ: 'JWT' })}.${b64({ sub: '1', name: 'x' })}.`;
+  const adminToken = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: '1', role: 'admin' })}.c2ln`;
+  const normalToken = `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64({ sub: '1', scope: 'read:profile' })}.c2ln`;
+  const requests = [];
+  const server = createServer((req, res) => {
+    requests.push(`${req.method} ${req.url}`);
+    const send = (type, body, status = 200) => { res.statusCode = status; res.setHeader('content-type', type); res.end(body); };
+    if (req.url === '/') return send('text/html', `<html><title>x</title><script>window.__T={a:"${noneToken}",b:"${adminToken}",c:"${normalToken}"}</script></html>`);
+    if (req.url === '/wp-login.php') return send('text/html', '<html><form name="loginform"><input name="log"><input type="password" name="pwd"><input id="wp-submit"></form></html>');
+    if (req.url === '/login') return send('text/html', '<html><form><input type="password"></form></html>');
+    if (req.url === '/admin') return send('text/html', '<html><body>Welcome to the admin blog section</body></html>'); // no password field: must not be flagged
+    send('text/html', 'nope', 404);
+  });
+  await new Promise((r) => server.listen(0, r));
+  try {
+    const result = await scan(project({ 'a.js': '' }), { url: `http://localhost:${server.address().port}`, only: ['live'] });
+    const found = (id) => result.findings.filter((f) => f.ruleId === id);
+    const jwt = found('live/weak-jwt');
+    assert.ok(jwt.some((f) => /alg: none/i.test(f.message)), 'unsigned token flagged');
+    assert.ok(jwt.some((f) => /`admin` role/.test(f.message)), 'privileged token flagged');
+    assert.ok(!jwt.some((f) => f.message.includes('read:profile')), 'a normal scoped token is not flagged');
+    assert.ok(!JSON.stringify(result).includes(adminToken), 'tokens are not printed in full');
+
+    const logins = found('live/login-page-exposed');
+    assert.ok(logins.some((f) => f.message.includes('/wp-login.php')), 'wp-login detected');
+    assert.ok(logins.some((f) => f.message.includes('/login')), 'generic login detected');
+    assert.ok(!logins.some((f) => f.message === 'The admin login is reachable at /admin.'), '/admin without a password field is not flagged');
+    assert.ok(requests.every((r) => r.startsWith('GET ')), 'only GET; no credential submission');
+  } finally {
+    server.close();
+  }
+});
+
+test('live checks read inside scripts, source maps and exposed files', async () => {
+  const requested = [];
+  const key = secrets.stripe;
+  const bundle = `!function(){var a="${key}";fetch("/api/v2/orders/123");fetch("/api/v2/orders/456");var b="http://10.0.4.12:8080/internal";}();\n//# sourceMappingURL=app.js.map`;
+  const map = JSON.stringify({
+    version: 3,
+    mappings: 'AAAA',
+    sources: ['webpack:///src/config/db.ts', 'webpack:///src/pages/Home.tsx', 'webpack:///node_modules/jquery/dist/jquery.js'],
+    sourcesContent: [`export const db = "postgres://app:${['Sup3r', 'Secret9x'].join('')}@db.prod.example.com:5432/app";\n`, 'export default () => null;\n', '/*! jQuery v1.11.0 | (c) jQuery Foundation */\n'],
+  });
+  const lock = JSON.stringify({ lockfileVersion: 3, packages: { '': {}, 'node_modules/lodash': { version: '4.17.15' } } });
+  const server = createServer((req, res) => {
+    const path = req.url.split('?')[0];
+    requested.push(`${req.method} ${req.url}`);
+    if (req.headers.origin) {
+      res.setHeader('access-control-allow-origin', req.headers.origin);
+      res.setHeader('access-control-allow-credentials', 'true');
+    }
+    const send = (type, body, status = 200) => { res.statusCode = status; res.setHeader('content-type', type); res.end(body); };
+    if (path === '/') return send('text/html', '<html><title>x</title><script src="/static/app.js"></script></html>');
+    if (path === '/static/app.js') return send('application/javascript', bundle);
+    if (path === '/static/app.js.map') return send('application/json', map);
+    if (path === '/package-lock.json') return send('application/json', lock);
+    if (path === '/graphql') return send('application/json', JSON.stringify({ data: { __schema: { queryType: { name: 'Query' }, types: [{ name: 'Query' }, { name: 'User' }] } } }));
+    if (path.endsWith('.php')) return send('text/html', '<b>Fatal error</b>: Uncaught Error in <b>/var/www/html/index.php</b> on line <b>12</b>', 500);
+    send('text/html', 'not found', 404);
+  });
+  await new Promise((r) => server.listen(0, r));
+  try {
+    const result = await scan(project({ 'a.js': '' }), { url: `http://localhost:${server.address().port}`, only: ['live'] });
+    const found = (id) => result.findings.filter((f) => f.ruleId === id);
+    const text = JSON.stringify(result);
+
+    const leaked = found('live/secret-in-javascript');
+    assert.ok(leaked.some((f) => f.severity === 'critical' && /Stripe live secret key found in \/static\/app\.js/.test(f.message)), 'secret in a bundle');
+    assert.ok(leaked.some((f) => /src\/config\/db\.ts \(from \/static\/app\.js\.map\)/.test(f.message)), 'secret in original source from the map');
+    assert.ok(!text.includes(key) && !text.includes('Sup3rSecret9x'), 'secrets stay masked');
+
+    assert.match(found('live/source-map-exposed')[0]?.message ?? '', /expose 2 of your own source file\(s\) with their full original code[\s\S]*src\/config[\s\S]*jquery/);
+    assert.match(found('live/vulnerable-js-library')[0]?.message ?? '', /jquery@1\.11\.0/, 'library version read from inside the map');
+    assert.ok(found('live/internal-address-leaked').some((f) => f.message.includes('10.0.4.12:8080')));
+    assert.match(found('live/api-endpoints-found')[0]?.message ?? '', /1 API path\(s\)[^]*\/api\/v2\/orders\/\{id\}/);
+    assert.ok(found('live/sensitive-file-exposed').some((f) => f.message.includes('/package-lock.json')));
+    assert.equal(found('live/cors-misconfigured')[0]?.severity, 'high');
+    assert.match(found('live/error-details-exposed')[0]?.message ?? '', /PHP error with a server file path/);
+    assert.match(found('live/graphql-introspection')[0]?.message ?? '', /2 types/);
+    assert.ok(requested.every((r) => r.startsWith('GET ')), 'only GET requests are sent');
+    assert.ok(!requested.some((r) => /osv|nvd|retire/i.test(r)) && result.packagesChecked === null, 'no advisory lookups without --online');
+  } finally {
+    server.close();
+  }
+});
+
+test('--url with no path checks only the site, not the current folder', async () => {
+  const root = project({ 'app.js': `const key = "${secrets.stripe}";\n` });
+  const server = createServer((req, res) => { res.setHeader('content-type', 'text/html'); res.end('<html><title>x</title></html>'); });
+  await new Promise((r) => server.listen(0, r));
+  try {
+    const run = (args) => new Promise((resolve) => {
+      const child = spawn(process.execPath, [CLI, ...args, '--format', 'json'], { cwd: root });
+      let out = '';
+      child.stdout.on('data', (d) => (out += d));
+      child.on('close', () => resolve(JSON.parse(out)));
+    });
+    const url = `http://localhost:${server.address().port}`;
+    const siteOnly = await run(['--url', url]);
+    assert.equal(siteOnly.filesScanned, 0);
+    assert.ok(!siteOnly.findings.some((f) => f.ruleId.startsWith('secret/')), 'the folder was scanned');
+    const both = await run(['.', '--url', url]);
+    assert.ok(both.findings.some((f) => f.ruleId === 'secret/stripe-live-key'), 'a path still scans the folder');
+  } finally {
+    server.close();
+  }
+});
+
 test('MCP server lists tools and runs a scan', async () => {
   const root = project({ 'a.js': `const k = "${secrets.stripe}";\n` });
   const child = spawn('node', [CLI, 'mcp'], { stdio: ['pipe', 'pipe', 'inherit'] });

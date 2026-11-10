@@ -44,8 +44,13 @@ Usage
   npx alil-launch mcp                 Start the MCP server for AI coding agents
 
 Deeper checks (all off by default)
-  --url <url>        Check your live site: TLS, headers, exposed files. With no
-                     path, only the site is checked. Add a path to scan both
+  --url <url>        Check your live site: TLS, headers, CORS, exposed files,
+                     and internal pages and their JavaScript for secrets,
+                     source maps, vulnerable libraries and debug output.
+                     With no path, only the site is checked. Add a path to
+                     scan both. With --online, the server software, CMS,
+                     plugins and libraries found are checked for CVEs
+  --pages <n>        Internal pages --url may crawl (default 50)
   --online           Look up CVEs and advisories for your dependencies and
                      platforms, and find packages that do not exist.
                      Sends package names and versions only
@@ -155,6 +160,7 @@ function parse() {
     allowPositionals: true,
     options: {
       url: { type: "string" },
+      pages: { type: "string" },
       online: { type: "boolean" },
       history: { type: "boolean" },
       run: { type: "boolean" },
@@ -210,6 +216,14 @@ function parseOnly(values: Values): Category[] | undefined {
   return only;
 }
 
+function parsePages(values: Values): number | undefined {
+  if (values.pages === undefined) return undefined;
+  const pages = Number(values.pages);
+  if (!Number.isInteger(pages) || pages < 0 || pages > 2000)
+    throw new Error("--pages must be a whole number from 0 to 2000");
+  return pages;
+}
+
 function writeFile(path: string, content: string): void {
   mkdirSync(dirname(resolve(path)), { recursive: true });
   writeFileSync(path, content);
@@ -220,7 +234,6 @@ function isSiteOnly(path: string | undefined, values: Values): boolean {
   return Boolean(
     values.url &&
       !path &&
-      !values.online &&
       !values.history &&
       !values.run &&
       !values.staged &&
@@ -239,7 +252,7 @@ async function runScan(
     throw new Error(`--fail-on must be one of: ${SEVERITIES.join(", ")}`);
   const baselinePath =
     values.baseline ??
-    (existsSync(join(root, DEFAULT_BASELINE))
+    (!siteOnly && existsSync(join(root, DEFAULT_BASELINE))
       ? join(root, DEFAULT_BASELINE)
       : undefined);
   const result = await scan(root, {
@@ -248,7 +261,9 @@ async function runScan(
     history: values.history,
     run: values.run,
     staged: values.staged,
-    only: parseOnly(values),
+    maxPages: parsePages(values),
+    only: siteOnly ? ["live"] : parseOnly(values),
+    skipFiles: siteOnly,
     baseline: values["update-baseline"] ? undefined : baselinePath,
   });
 

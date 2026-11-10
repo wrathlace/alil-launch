@@ -42,6 +42,7 @@ export function buildContext(rootInput: string, options: ScanOptions): ScanConte
     options: { ...options, config },
     gaps: [],
     packagesChecked: null,
+    pagesChecked: null,
     stack: detectStack({ files, read }),
     read,
     exists: (path) => fileSet.has(path) || existsSync(join(root, path)),
@@ -146,6 +147,7 @@ export async function scan(rootInput = '.', options: ScanOptions = {}): Promise<
     suppressed,
     incomplete: ctx.gaps,
     packagesChecked: ctx.packagesChecked,
+    pagesChecked: ctx.pagesChecked,
     rules: [...metas.values()].filter((r) => active.some((f) => f.ruleId === r.id)),
   };
 }

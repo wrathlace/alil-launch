@@ -45,7 +45,7 @@ npx alil-launch demo
 | **Backups** | No backup setup, no restore plan, database dumps in the repo, databases with no persistent volume, SQLite on serverless hosts |
 | **Deployment** | Missing lockfiles, undocumented env vars, hardcoded localhost and ports, destructive migrations in production, no CI or tests |
 | **Launch readiness** | Health checks, error monitoring, rate limiting, privacy policy, robots.txt, 404 page, social previews |
-| **Your live site** | HTTPS, certificate expiry, security headers, cookies, exposed `.env` and `.git` files |
+| **Your live site** | HTTPS, old TLS versions, certificate expiry, security headers, weak CSP and HSTS, CORS, cookies. About 100 sensitive paths, such as `.env`, `.git`, backups, logs, lockfiles, phpMyAdmin, Spring actuator, API docs and GraphQL introspection. Up to 50 internal pages (`--pages` to change) and every script they load: credentials shipped to browsers, public source maps and the original code inside them, internal addresses, API endpoints, debug pages, mixed content, unpinned or unhashed CDN scripts, vulnerable libraries, directory listings and broken links. Weak JSON Web Tokens and reachable admin or login pages. WordPress account names and XML-RPC. With `--online`, CVEs for the server software, CMS, plugins, themes, front-end libraries (using the [Retire.js](https://github.com/RetireJS/retire.js) database, so versions inside bundles are found too) and any exposed lockfile |
 | **Known vulnerabilities** | CVEs in your dependencies and CMS, with active exploitation flagged. Needs `--online` |
 
 Run `npx alil-launch rules` to see all of them.
@@ -93,7 +93,7 @@ npx alil-launch --run                     # Run your own build, lint and test co
 
 On its own, `--url` checks only the website and reads no files, so it works from any folder. To check a project and its site together, add the path: `npx alil-launch . --url https://myapp.com`.
 
-Only use `--url` on sites you own or have permission to test. It requests a few common sensitive paths, such as `/.env`.
+Only use `--url` on sites you own or have permission to test. It sends only GET requests, the way a browser or search engine would: it requests about 100 common sensitive paths, follows up to 50 internal links two at a time, downloads the scripts and source maps those pages load, and sends one request with a foreign `Origin` header to test CORS. It respects `robots.txt`, never follows logout, delete or checkout links, and never sends attack payloads. With `--online` it also sends the names and versions of what it found to OSV, the NVD and wordpress.org, and downloads the Retire.js database from GitHub.
 
 `--online` sends package and plugin names and versions to [OSV](https://osv.dev), the [NVD](https://nvd.nist.gov), npm, PyPI and wordpress.org, and CVE ids to [CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and [FIRST](https://www.first.org/epss/). It never sends your code. Private package names are included, so don't use it if a name itself is confidential.
 

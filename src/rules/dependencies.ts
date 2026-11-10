@@ -112,7 +112,7 @@ async function advisory(id: string): Promise<any> {
 }
 
 /** Looks up every package, and records a gap rather than throwing, so a failure can never read as a clean result. */
-async function checkOsv(packages: Pkg[], ctx: ScanContext): Promise<Hit[]> {
+export async function checkOsv(packages: Pkg[], ctx: ScanContext): Promise<Hit[]> {
   const found = new Map<Pkg, string[]>();
   let looked = 0;
   try {
