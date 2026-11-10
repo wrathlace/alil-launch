@@ -1,6 +1,6 @@
 {
   "name": "alil-launch",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A lil check before you launch. Finds exposed secrets, unsafe settings, missing backups, known CVEs and deployment mistakes, and keeps watching for new ones.",
   "type": "module",
   "bin": {
