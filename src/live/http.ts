@@ -2,11 +2,13 @@ export interface GetOptions {
   redirect?: RequestRedirect;
   headers?: Record<string, string>;
   timeoutMs?: number;
+  /** Only safe, non-destructive methods are ever used: GET (default), HEAD and OPTIONS. */
+  method?: 'GET' | 'HEAD' | 'OPTIONS';
 }
 
-export async function get(url: string, { redirect = 'follow', headers = {}, timeoutMs = 15_000 }: GetOptions = {}): Promise<Response | null> {
+export async function get(url: string, { redirect = 'follow', headers = {}, timeoutMs = 15_000, method = 'GET' }: GetOptions = {}): Promise<Response | null> {
   try {
-    return await fetch(url, { redirect, signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'alil-launch', ...headers } });
+    return await fetch(url, { method, redirect, signal: AbortSignal.timeout(timeoutMs), headers: { 'user-agent': 'alil-launch', ...headers } });
   } catch {
     return null;
   }

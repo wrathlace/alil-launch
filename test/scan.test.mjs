@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -125,8 +125,13 @@ test('code that only names a credential is not reported', async () => {
     'app/config.yml': "password: '%database_password%'\nclient_token: '@service.token'\n",
     'lang/de/messages.json': '{ "Password": "Passwort1234" }\n',
     'bundle.js': `${'x'.repeat(3000)}\nconst password = "abc123def456";\n`,
+    'configs/urls.ts': 'export const urls = {\n  forgetPasswordOtpVerfication: "Login/OtpVerification",\n  resetPassword: "Login/ChangePassword",\n  changePassword: "Login/ChangeUserPassword",\n  forgotPasswordApi: "api/v1/auth/forgot-password/",\n};\n',
   });
   assert.deepEqual(ids(await scan(root)).filter((id) => id.startsWith('secret/')), []);
+
+  // A real password value is still found, even next to route constants.
+  const real = project({ 'configs/db.ts': 'export const dbPassword = "Kq7!vR2pLm9x";\n' });
+  assert.ok(ids(await scan(real)).includes('secret/generic'));
 });
 
 test('real credentials in config files are still found', async () => {
@@ -423,6 +428,51 @@ test('live checks crawl internal pages and read what they load', async () => {
   } finally {
     server.close();
   }
+});
+
+test('active probes are gated behind authorization and run only non-destructive checks', async () => {
+  const methods = [];
+  const hostHeaders = [];
+  const server = createServer((req, res) => {
+    methods.push(req.method);
+    if (req.headers['x-forwarded-host']) hostHeaders.push(req.headers['x-forwarded-host']);
+    const send = (type, body, status = 200, extra = {}) => { res.writeHead(status, { 'content-type': type, ...extra }); res.end(body); };
+    if (req.method === 'OPTIONS') return send('text/plain', '', 204, { allow: 'GET, HEAD, OPTIONS, PUT, DELETE, TRACE' });
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    if (req.url === '/') return send('text/html', `<html><title>x</title><a href="/go?next=https://evil.example/path">next</a><link rel="canonical" href="https://${host}/"><script>fetch("/api/users");fetch("/api/orders/5")</script></html>`);
+    if (req.url === '/api/users') return send('application/json', JSON.stringify([{ id: 1, email: 'a@b.dev' }]));
+    if (req.url === '/api/orders/5') return send('application/json', JSON.stringify({ error: 'Unauthorized: login required' }), 401);
+    send('text/html', 'nope', 404);
+  });
+  await new Promise((r) => server.listen(0, r));
+  const url = `http://localhost:${server.address().port}`;
+  try {
+    // Without --active: the redirect parameter is still flagged (zero-request analysis), but no probes run.
+    const passive = await scan(project({ 'a.js': '' }), { url, only: ['live'] });
+    assert.ok(passive.findings.some((f) => f.ruleId === 'live/open-redirect-parameter' && f.message.includes('next')), 'redirect param found passively');
+    assert.ok(!passive.findings.some((f) => ['live/host-header-reflected', 'live/risky-http-method', 'live/unauthenticated-endpoint'].includes(f.ruleId)), 'no active findings without --active');
+    assert.ok(!methods.includes('OPTIONS') && hostHeaders.length === 0, 'no probes sent without --active');
+
+    const result = await scan(project({ 'a.js': '' }), { url, only: ['live'], active: true });
+    const found = (id) => result.findings.filter((f) => f.ruleId === id);
+    assert.match(found('live/host-header-reflected')[0]?.message ?? '', /x-forwarded-host|host/i);
+    assert.match(found('live/risky-http-method')[0]?.message ?? '', /TRACE/);
+    assert.ok(found('live/unauthenticated-endpoint').some((f) => f.message.includes('/api/users')), 'open endpoint flagged');
+    assert.ok(!found('live/unauthenticated-endpoint').some((f) => f.message.includes('/api/orders')), '401 endpoint is not flagged');
+    assert.ok(methods.every((m) => ['GET', 'HEAD', 'OPTIONS'].includes(m)), 'only safe HTTP methods are used');
+  } finally {
+    server.close();
+  }
+});
+
+test('the CLI refuses --active without authorization', () => {
+  const run = (args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
+  const noAuth = run(['--url', 'https://example.com', '--active']);
+  assert.equal(noAuth.status, 2);
+  assert.match(noAuth.stderr, /--i-am-authorized/);
+  const noUrl = run(['.', '--active', '--i-am-authorized']);
+  assert.equal(noUrl.status, 2);
+  assert.match(noUrl.stderr, /--active works with --url/);
 });
 
 test('passive checks flag weak tokens and reachable login pages, without sending credentials', async () => {

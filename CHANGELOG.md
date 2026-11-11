@@ -10,6 +10,8 @@
 - `--url` checks about 100 sensitive paths, including backups, logs, lockfiles, VCS folders, phpMyAdmin, Adminer, Spring actuator, API docs and GraphQL introspection, plus CORS, TLS 1.0 and 1.1, weak CSP and HSTS, debug pages and stack traces, and security.txt
 - `--url` reports the stack it can see (server, CMS, frameworks) as info findings, shown with `--verbose`
 - `--url` decodes JSON Web Tokens the site hands to browsers and flags unsigned (`alg: none`) or privileged ones, and reports which admin or login pages are publicly reachable. Both are observe-only: no credentials or payloads are ever sent
+- `--url` flags redirect parameters (such as `?next=https://...`) that could enable open redirects, read straight from the page and scripts without any extra request
+- New `--active` flag sends a few extra, non-destructive probes to the live site: Host-header reflection (password-reset and cache poisoning), risky HTTP methods (TRACE, PUT, DELETE via OPTIONS), and sensitive endpoints that return data without authentication. It sends only GET, HEAD and OPTIONS, never attack payloads, and never touches state-changing paths. Because it probes the target, it refuses to run without `--i-am-authorized`, so it is only for sites you own or are authorized to test
 - On WordPress sites, `--url` checks for public account names and XML-RPC
 - `--url --online` looks up CVEs for the server software, CMS, WordPress plugins and themes, front-end libraries (with the Retire.js database, which finds versions inside bundles) and the packages in any exposed lockfile
 - `--url --online` with no path checks only the site

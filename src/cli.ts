@@ -51,6 +51,13 @@ Deeper checks (all off by default)
                      scan both. With --online, the server software, CMS,
                      plugins and libraries found are checked for CVEs
   --pages <n>        Internal pages --url may crawl (default 50)
+  --active           Send extra non-destructive active probes with --url
+                     (host-header reflection, risky HTTP methods, endpoints
+                     reachable without login). No attack payloads are sent.
+                     Only for sites you own or are authorized to test, so it
+                     requires --i-am-authorized
+  --i-am-authorized  Confirm you have permission to actively test the --url
+                     target. Required by --active
   --online           Look up CVEs and advisories for your dependencies and
                      platforms, and find packages that do not exist.
                      Sends package names and versions only
@@ -161,6 +168,8 @@ function parse() {
     options: {
       url: { type: "string" },
       pages: { type: "string" },
+      active: { type: "boolean" },
+      "i-am-authorized": { type: "boolean" },
       online: { type: "boolean" },
       history: { type: "boolean" },
       run: { type: "boolean" },
@@ -250,6 +259,18 @@ async function runScan(
   const failOn = (values["fail-on"] ?? "high") as Severity;
   if (!SEVERITIES.includes(failOn))
     throw new Error(`--fail-on must be one of: ${SEVERITIES.join(", ")}`);
+  if (values.active) {
+    if (!values.url)
+      throw new Error("--active works with --url. Pass the site to test.");
+    if (!values["i-am-authorized"])
+      throw new Error(
+        "--active sends active probes to the live site, so it is only for sites you own or are\n" +
+          "authorized in writing to test. Re-run with --i-am-authorized to confirm you have permission.",
+      );
+    process.stderr.write(
+      `Active probing ${values.url} (authorized). Sending non-destructive checks only.\n`,
+    );
+  }
   const baselinePath =
     values.baseline ??
     (!siteOnly && existsSync(join(root, DEFAULT_BASELINE))
@@ -262,6 +283,7 @@ async function runScan(
     run: values.run,
     staged: values.staged,
     maxPages: parsePages(values),
+    active: Boolean(values.active),
     only: siteOnly ? ["live"] : parseOnly(values),
     skipFiles: siteOnly,
     baseline: values["update-baseline"] ? undefined : baselinePath,

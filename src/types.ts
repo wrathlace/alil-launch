@@ -126,6 +126,8 @@ export interface ScanOptions {
   skipFiles?: boolean;
   /** Internal pages the live check may fetch after the home page. */
   maxPages?: number;
+  /** Send extra, non-destructive active probes to the live site. Requires explicit authorization. */
+  active?: boolean;
 }
 
 export interface CategoryScore {

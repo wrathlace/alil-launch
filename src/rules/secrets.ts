@@ -181,8 +181,10 @@ function looksLikeSecret(name: string, value: string): boolean {
   if (PLACEHOLDER.test(value) || isIdentifier(name, value)) return false;
   if (value.includes('\\')) return false;
   if (/^(https?:|\/|\.\/|[a-z]+:\/\/)/i.test(value)) return false;
+  // Relative routes such as resetPassword: "Login/ChangePassword" name an endpoint, whatever the key is called.
+  if (/^[\w.-]+(\/[\w.-]+)+\/?$/.test(value)) return false;
   if (/password|passwd|pwd/i.test(name)) return value.length >= 6 && entropy(value) >= 2;
-  if (/[\\[\]()|^]/.test(value) || /^[\w.-]+(\/[\w.-]+)+$/.test(value)) return false;
+  if (/[\\[\]()|^]/.test(value)) return false;
   return entropy(value) >= 3 && /[0-9]/.test(value) && /[A-Za-z]/.test(value);
 }
 

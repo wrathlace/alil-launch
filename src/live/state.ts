@@ -25,6 +25,8 @@ export interface LiveState {
   site: URL;
   ctx: ScanContext;
   report: Reporter;
+  /** True only when the user passed --active with authorization: gated probes may run. */
+  active: boolean;
   /** So each issue is reported once, at the first place it was seen. */
   seen: Set<string>;
   assetDirs: Set<string>;

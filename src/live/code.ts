@@ -1,6 +1,7 @@
 import { mapLimit } from '../core/util.js';
 import { politeGet, readText } from './http.js';
 import { sameSite, STATIC_CDNS, VENDOR_HOSTS } from './html.js';
+import { detectRedirectParams } from './active.js';
 import { inspectTokens } from './passive.js';
 import { RULES } from './rules.js';
 import { addLibraries, once, scanForSecrets, type LiveState } from './state.js';
@@ -60,6 +61,7 @@ export function inspectText(state: LiveState, text: string, where: string): void
   }
 
   inspectTokens(state, text, where);
+  detectRedirectParams(state, text, where);
 }
 
 interface SourceMap {

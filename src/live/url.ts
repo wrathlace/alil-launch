@@ -8,6 +8,7 @@ import { analyzeScripts, inspectText, reportEndpoints, reportSourceMaps } from '
 import { get, politeGet, readHtml, readText } from './http.js';
 import { resolveUrl, sameSite, STATIC_CDNS, tags, type Tag } from './html.js';
 import { builtInDetector, loadRetire, type Detector } from './libraries.js';
+import { runActiveChecks } from './active.js';
 import { checkLoginPages } from './passive.js';
 import { checkCors, checkCsp, checkErrorPage, checkErrorPages, checkGraphql, checkHsts, checkSecurityTxt, checkTlsVersions, runProbes } from './probes.js';
 import { LIVE_RULES, RULES } from './rules.js';
@@ -378,7 +379,7 @@ async function checkUrl(input: string, report: Reporter, ctx: ScanContext): Prom
   const local = /^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(final.hostname);
   ctx.pagesChecked = 1;
   const state: LiveState = {
-    site: final, ctx, report, seen: new Set(), assetDirs: new Set(), scripts: new Map(), wordpress: null,
+    site: final, ctx, report, active: Boolean(ctx.options.active), seen: new Set(), assetDirs: new Set(), scripts: new Map(), wordpress: null,
     detector: await detector, libraries: new Map(), endpoints: new Map(), tech: new Map(), packages: [], components: [], sourceMaps: [],
   };
   if (elapsed > 2000) report(RULES.slow.id, { message: `The first response took ${elapsed} ms.` });
@@ -438,6 +439,7 @@ async function checkUrl(input: string, report: Reporter, ctx: ScanContext): Prom
   await checkCors(state, [final.pathname, ...apiPaths]);
   await checkGraphql(state);
   await checkLoginPages(state);
+  if (state.active) await runActiveChecks(state);
   const platforms: Platforms = { packages: [], components: [], unversioned: [] };
   if (state.wordpress) await checkWordPress(state, platforms);
 
