@@ -465,6 +465,45 @@ test('active probes are gated behind authorization and run only non-destructive 
   }
 });
 
+test('active injection probes detect reflected XSS and error-based SQLi, safely', async () => {
+  const probes = [];
+  const server = createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    probes.push({ method: req.method, path: u.pathname, q: u.searchParams.get('q'), id: u.searchParams.get('id'), term: u.searchParams.get('term') });
+    const send = (type, body, status = 200) => { res.writeHead(status, { 'content-type': type }); res.end(body); };
+    if (u.pathname === '/') return send('text/html', '<html><title>x</title><a href="/search?q=hello">s</a><a href="/item?id=1">i</a><form method="get" action="/find"><input name="term"></form></html>');
+    if (u.pathname === '/search') return send('text/html', `<html><body>Results for ${u.searchParams.get('q') ?? ''}</body></html>`); // reflects raw -> XSS
+    if (u.pathname === '/find') return send('text/html', `<html><body>No match: ${u.searchParams.get('term') ?? ''}</body></html>`); // reflects raw -> XSS
+    if (u.pathname === '/item') {
+      const id = u.searchParams.get('id') ?? '';
+      if (id.includes("'")) return send('text/html', '<html><body>Error: You have an error in your SQL syntax near "\'"</body></html>', 500); // SQLi
+      return send('text/html', `<html><body>Item ${id.replace(/[<>]/g, '')}</body></html>`); // escapes, so no XSS
+    }
+    send('text/html', 'nope', 404);
+  });
+  await new Promise((r) => server.listen(0, r));
+  const url = `http://localhost:${server.address().port}`;
+  try {
+    const off = await scan(project({ 'a.js': '' }), { url, only: ['live'] });
+    assert.ok(!off.findings.some((f) => ['live/reflected-xss', 'live/sql-injection'].includes(f.ruleId)), 'no injection probes without --active');
+    assert.ok(probes.every((p) => !String(p.q).includes('<x>') && !String(p.id).includes("'")), 'no payloads sent without --active');
+
+    const result = await scan(project({ 'a.js': '' }), { url, only: ['live'], active: true });
+    const found = (id) => result.findings.filter((f) => f.ruleId === id);
+    assert.ok(found('live/reflected-xss').some((f) => f.message.includes('`q`')), 'reflected XSS in q');
+    assert.ok(found('live/reflected-xss').some((f) => f.message.includes('`term`')), 'reflected XSS in a GET form field');
+    assert.ok(found('live/sql-injection').some((f) => f.message.includes('`id`')), 'SQLi in id');
+    assert.ok(!found('live/reflected-xss').some((f) => f.message.includes('`id`')), 'escaped param is not flagged as XSS');
+    // Safety: only safe methods overall, any payload-carrying request is GET, and no executable markers.
+    assert.ok(probes.every((p) => ['GET', 'HEAD', 'OPTIONS'].includes(p.method)), 'only safe HTTP methods are used');
+    const payloadReqs = probes.filter((p) => /<x>|'/.test(`${p.q} ${p.id} ${p.term}`));
+    assert.ok(payloadReqs.length > 0 && payloadReqs.every((p) => p.method === 'GET'), 'payloads are sent only via GET');
+    assert.ok(probes.every((p) => !/<script|onerror=|onload=|javascript:|union select|drop table|sleep\(/i.test(`${p.q} ${p.id} ${p.term}`)), 'no executable or destructive payloads are sent');
+  } finally {
+    server.close();
+  }
+});
+
 test('the CLI refuses --active without authorization', () => {
   const run = (args) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8' });
   const noAuth = run(['--url', 'https://example.com', '--active']);

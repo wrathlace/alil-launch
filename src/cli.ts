@@ -51,11 +51,12 @@ Deeper checks (all off by default)
                      scan both. With --online, the server software, CMS,
                      plugins and libraries found are checked for CVEs
   --pages <n>        Internal pages --url may crawl (default 50)
-  --active           Send extra non-destructive active probes with --url
-                     (host-header reflection, risky HTTP methods, endpoints
-                     reachable without login). No attack payloads are sent.
-                     Only for sites you own or are authorized to test, so it
-                     requires --i-am-authorized
+  --active           Send extra non-destructive active probes with --url:
+                     host-header reflection, risky HTTP methods, endpoints
+                     reachable without login, and reflected-XSS and error-based
+                     SQL injection on GET parameters (a non-executing marker,
+                     never a working exploit). Only for sites you own or are
+                     authorized to test, so it requires --i-am-authorized
   --i-am-authorized  Confirm you have permission to actively test the --url
                      target. Required by --active
   --online           Look up CVEs and advisories for your dependencies and

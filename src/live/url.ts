@@ -8,7 +8,7 @@ import { analyzeScripts, inspectText, reportEndpoints, reportSourceMaps } from '
 import { get, politeGet, readHtml, readText } from './http.js';
 import { resolveUrl, sameSite, STATIC_CDNS, tags, type Tag } from './html.js';
 import { builtInDetector, loadRetire, type Detector } from './libraries.js';
-import { runActiveChecks } from './active.js';
+import { collectForms, noteQueryLink, runActiveChecks } from './active.js';
 import { checkLoginPages } from './passive.js';
 import { checkCors, checkCsp, checkErrorPage, checkErrorPages, checkGraphql, checkHsts, checkSecurityTxt, checkTlsVersions, runProbes } from './probes.js';
 import { LIVE_RULES, RULES } from './rules.js';
@@ -147,7 +147,10 @@ function checkPage(state: LiveState, html: string, pageUrl: URL): URL[] {
       state.report(RULES.internal.id, { key: url.host, message: `${where} links to a server by raw IP address${url.protocol === 'http:' ? ' over plain HTTP' : ''}: ${url.origin}/.` });
     }
     if (tag === 'a') {
-      if (sameSite(url, state.site)) links.push(url);
+      if (sameSite(url, state.site)) {
+        links.push(url);
+        noteQueryLink(state, url);
+      }
       continue;
     }
     if (tag === 'link' && !/stylesheet|preload|modulepreload|icon/i.test(attrs.rel ?? '')) continue;
@@ -174,6 +177,7 @@ function checkPage(state: LiveState, html: string, pageUrl: URL): URL[] {
   inspectText(state, html, where);
   checkErrorPage(state, html, where);
   fingerprintHtml(state, html);
+  if (state.active) collectForms(state, html, pageUrl);
   return links;
 }
 
@@ -379,7 +383,7 @@ async function checkUrl(input: string, report: Reporter, ctx: ScanContext): Prom
   const local = /^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(final.hostname);
   ctx.pagesChecked = 1;
   const state: LiveState = {
-    site: final, ctx, report, active: Boolean(ctx.options.active), seen: new Set(), assetDirs: new Set(), scripts: new Map(), wordpress: null,
+    site: final, ctx, report, active: Boolean(ctx.options.active), queryUrls: new Map(), forms: [], seen: new Set(), assetDirs: new Set(), scripts: new Map(), wordpress: null,
     detector: await detector, libraries: new Map(), endpoints: new Map(), tech: new Map(), packages: [], components: [], sourceMaps: [],
   };
   if (elapsed > 2000) report(RULES.slow.id, { message: `The first response took ${elapsed} ms.` });

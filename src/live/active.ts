@@ -1,12 +1,15 @@
 import { mapLimit } from '../core/util.js';
+import { sameSite } from './html.js';
 import { get, isHtml, readText } from './http.js';
 import { RULES } from './rules.js';
 import { once, type LiveState } from './state.js';
 
 /**
  * Active checks: these send a few extra, crafted-but-non-destructive requests, so they run only
- * when the user passes --active with authorization. Nothing here modifies data, sends attack
- * payloads (no SQLi/XSS strings), floods the target, or touches state-changing paths.
+ * when the user passes --active with authorization. Injection detection uses a unique, non-executing
+ * marker (`<x>"'`) to observe missing output escaping and SQL errors — never a working script, a
+ * data-modifying statement (no UNION/DROP/UPDATE), or a time-based payload. Nothing here modifies
+ * data, floods the target, uses anything but GET/HEAD/OPTIONS, or touches state-changing paths.
  */
 
 /** Parameter names that commonly carry a redirect destination. OAuth's redirect_uri is excluded: it is expected. */
@@ -18,6 +21,114 @@ const UNSAFE = /(logout|log-out|signout|sign-out|delete|remove|destroy|drop|trun
 const SENSITIVE = /(admin|users?|accounts?|members?|customers?|profiles?|orders?|invoices?|payments?|config|settings|internal|private|secret|debug|metrics|dashboard|reports?|audit|logs?|me\b|whoami|session|token)/i;
 
 const MARKER_HOST = 'alil-launch-hostcheck.example';
+
+const MAX_INJECT_URLS = 10;
+const MAX_PARAMS = 4;
+/** A unique, non-executing probe: `<x>` is a no-op tag and the quotes test attribute and SQL escaping. */
+const randomMarker = (): string => `aliL${Math.random().toString(36).slice(2, 8)}`;
+const payloadFor = (marker: string): string => `${marker}<x>"'`;
+/** Database errors that appear when a stray quote breaks a query: the classic error-based SQLi signal. */
+const DB_ERROR = /SQL syntax|SQLSTATE|mysqli?_|mysql_fetch|valid MySQL result|ORA-\d{5}|PLS-\d{5}|PostgreSQL.{0,40}ERROR|pg_query|pg_exec|SQLite3?::|System\.Data\.SQLite|System\.Data\.SqlClient|SqlException|ODBC.{0,30}SQL|JDBC|Unclosed quotation mark|quoted string not properly terminated|unterminated quoted string|syntax error at or near|near "[^"]*": syntax error|Warning: pg_/i;
+
+/** Records a same-site link that carries query parameters, for later injection probes. Sends nothing. */
+export function noteQueryLink(state: LiveState, url: URL): void {
+  if (![...url.searchParams].length || UNSAFE.test(url.pathname + url.search)) return;
+  const bare = `${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+  if (!state.queryUrls.has(bare) && state.queryUrls.size < 60) state.queryUrls.set(bare, state.site.pathname);
+}
+
+/** Collects GET forms and their input names, for later injection probes. Sends nothing. */
+export function collectForms(state: LiveState, html: string, pageUrl: URL): void {
+  for (const block of html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/gi)) {
+    const attrs = block[1];
+    const method = (/\bmethod\s*=\s*["']?(\w+)/i.exec(attrs)?.[1] ?? 'get').toLowerCase();
+    if (method !== 'get') continue;
+    const action = /\baction\s*=\s*["']([^"']*)["']/i.exec(attrs)?.[1] ?? pageUrl.href;
+    const url = resolveLink(action, pageUrl.href);
+    if (!url || !sameSite(url, state.site) || UNSAFE.test(url.pathname)) continue;
+    const params = [...new Set([...block[2].matchAll(/<(?:input|textarea|select)\b[^>]*\bname\s*=\s*["']?([\w.\[\]-]+)/gi)].map((m) => m[1]))]
+      .filter((n) => !/csrf|token|_method/i.test(n))
+      .slice(0, 6);
+    if (params.length && state.forms.length < 30) state.forms.push({ action: `${url.origin}${url.pathname}`, params, where: pageUrl.pathname });
+  }
+}
+
+function resolveLink(value: string, base: string): URL | null {
+  try {
+    const url = new URL(value, base);
+    return /^https?:$/.test(url.protocol) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+interface Target {
+  base: string;
+  params: string[];
+  fixed: Record<string, string>;
+  where: string;
+}
+
+/** Unifies query-string links and GET forms into one list of {url, parameters} to probe. */
+function injectionTargets(state: LiveState): Target[] {
+  const seen = new Set<string>();
+  const targets: Target[] = [];
+  const add = (base: string, params: string[], fixed: Record<string, string>, where: string): void => {
+    const key = `${base}|${params.sort().join(',')}`;
+    if (params.length && !seen.has(key)) {
+      seen.add(key);
+      targets.push({ base, params: params.slice(0, MAX_PARAMS), fixed, where });
+    }
+  };
+  for (const [url, where] of state.queryUrls) {
+    const parsed = new URL(url);
+    const params = [...parsed.searchParams.keys()];
+    add(`${parsed.origin}${parsed.pathname}`, params, Object.fromEntries(parsed.searchParams), where);
+  }
+  for (const form of state.forms) add(form.action, form.params, {}, form.where);
+  return targets.slice(0, MAX_INJECT_URLS);
+}
+
+function buildProbe(target: Target, param: string, value: string): string {
+  const search = new URLSearchParams(target.fixed);
+  for (const p of target.params) if (!search.has(p)) search.set(p, target.fixed[p] ?? 'alil');
+  search.set(param, value);
+  return `${target.base}?${search.toString()}`;
+}
+
+/**
+ * Error-based SQLi and reflected-XSS detection on GET parameters. Sends one probe per parameter with a
+ * unique non-executing marker; never a working script, never a data-modifying or time-based payload.
+ */
+async function checkInjection(state: LiveState): Promise<void> {
+  const targets = injectionTargets(state);
+  await mapLimit(targets, 2, async (target) => {
+    // Baseline, so a database error that is always present is not blamed on us.
+    const baseRes = await get(buildProbe(target, target.params[0], target.fixed[target.params[0]] ?? 'alil'));
+    const baseBody = baseRes ? await readText(baseRes, 200_000) : '';
+    const baseError = DB_ERROR.test(baseBody);
+
+    for (const param of target.params) {
+      const marker = randomMarker();
+      const res = await get(buildProbe(target, param, payloadFor(marker)));
+      if (!res) continue;
+      const type = res.headers.get('content-type') ?? '';
+      const body = await readText(res, 300_000);
+      const path = new URL(target.base).pathname;
+
+      if (/html|xml|json|javascript|text\/plain/.test(type) || !type) {
+        // Reflected unescaped: the marker comes back with its `<x>` tag intact, not HTML-encoded.
+        if (body.includes(`${marker}<x>`) && once(state, `xss:${path}:${param}`)) {
+          state.report(RULES.xss.id, { key: `${path}:${param}`, message: `The \`${param}\` parameter on ${path} is reflected into the page without escaping (seen from ${target.where}).` });
+        }
+      }
+      if (!baseError && DB_ERROR.test(body) && once(state, `sqli:${path}:${param}`)) {
+        const sample = DB_ERROR.exec(body)?.[0] ?? 'a database error';
+        state.report(RULES.sqli.id, { key: `${path}:${param}`, message: `A quote in the \`${param}\` parameter on ${path} triggered a database error (\`${sample}\`), which indicates SQL injection (seen from ${target.where}).` });
+      }
+    }
+  });
+}
 
 /** Reads redirect-style parameters out of text already fetched. Sends nothing. */
 export function detectRedirectParams(state: LiveState, text: string, where: string): void {
@@ -81,4 +192,5 @@ export async function runActiveChecks(state: LiveState): Promise<void> {
   await checkHostHeader(state);
   await checkMethods(state);
   await checkOpenEndpoints(state);
+  await checkInjection(state);
 }

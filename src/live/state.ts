@@ -27,6 +27,10 @@ export interface LiveState {
   report: Reporter;
   /** True only when the user passed --active with authorization: gated probes may run. */
   active: boolean;
+  /** Same-site URLs with query parameters, found while crawling, for injection probes. url -> page it was on. */
+  queryUrls: Map<string, string>;
+  /** GET forms found while crawling: action URL, input names, and the page they were on. */
+  forms: Array<{ action: string; params: string[]; where: string }>;
   /** So each issue is reported once, at the first place it was seen. */
   seen: Set<string>;
   assetDirs: Set<string>;
