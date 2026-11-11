@@ -8,6 +8,8 @@ npx alil-launch
 
 No install, no account, no config. It works in any project, whatever language it's written in, and your code never leaves your machine.
 
+> **Full command and flag reference:** [docs/USAGE.md](docs/USAGE.md).
+
 Alil Launch checks the things that actually go wrong on launch day: API keys in your code, a database with no backups, a `.env` file in git, a Docker socket exposed to a container, a Supabase table anyone can read. You get a score, a clear verdict, and the fix for each problem.
 
 ```
